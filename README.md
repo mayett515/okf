@@ -110,14 +110,34 @@ python scripts/pruefen.py
 
 Das Skript sagt dir, wenn ein Feld fehlt, ein Link ins Leere zeigt oder ein Begriff nicht im Index steht.
 
-## 6. Wann gehört ein Begriff ins OKF?
+## 6. Was ins OKF gehört und was nicht
 
-Nicht jeder. Zwei Fragen, beide mit Ja:
+Nicht jeder Begriff. Zwei Fragen, beide müssen mit Ja beantwortet werden:
 
 - Braucht der Assistent den Begriff bei fast jeder Frage?
 - Richtet eine falsche Antwort Schaden an?
 
-„Auftrag" in einer Werkstatt: ja und ja. „Farbe der Werkstatt-Shirts": nein und nein, das bleibt im Wiki.
+Am Beispiel der Werkstatt:
+
+| Kandidat | Oft gebraucht? | Falsch = Schaden? | Ergebnis |
+| --- | --- | --- | --- |
+| Was ein Auftrag ist | ja | ja, falsches Rad wird bearbeitet | **OKF** |
+| Wann bezahlt wird | ja | ja, Streit mit Kunden | **OKF** (als Regel) |
+| Was ein KVA ist | ja | ja, sonst Verwechslung mit Endpreis | **OKF** |
+| Wie die Annahme am Telefon abläuft | manchmal | kaum | Wiki |
+| Welche Ersatzteile im Regal liegen | selten | nein | Wiki, Lagerliste |
+| Öffnungszeiten | oft | nein, steht auch an der Tür | Wiki |
+| Der Ablauf von 2023 mit dem Papierordner | nie | ja, weil veraltet | gar nicht, löschen oder als veraltet markieren |
+| Farbe der Werkstatt-Shirts | nie | nein | Wiki |
+
+Das Muster: **Ins OKF kommt, was ein Begriff oder eine Regel ist und bei dem alle dasselbe meinen müssen.** Nicht ins OKF kommt alles, was eine Anleitung, eine Liste, eine Geschichte oder eine Momentaufnahme ist. Das bleibt im Wiki, und der Assistent findet es dort über die normale Suche.
+
+Faustregeln:
+
+- Ein OKF-Eintrag ist eine Definition, keine Anleitung. „Was ist ein Auftrag" ja, „wie lege ich einen Auftrag im System an" nein.
+- Ein OKF-Eintrag ist stabil. Wenn sich etwas monatlich ändert (Preise, Namen, Dienstpläne), gehört es nicht hinein.
+- Ein OKF-Eintrag ist kurz. Wenn du mehr als fünf Sätze brauchst, sind es wahrscheinlich zwei Begriffe oder eine Anleitung.
+- Ein OKF-Eintrag ist geprüft. Wenn niemand sagen kann „ja, so stimmt es", bleibt er `status: draft` und zählt nicht.
 
 Die Falle ist, zu viel reinzuschreiben. Dann wird das OKF das zweite Wiki, das keiner pflegt. Zehn richtige Begriffe sind mehr wert als fünfzig halbe.
 
@@ -135,17 +155,48 @@ Die Falle ist, zu viel reinzuschreiben. Dann wird das OKF das zweite Wiki, das k
 
 Warum das wichtig ist: Ein Wiki weiß nicht, ob eine Seite noch stimmt. Eine OKF-Datei trägt das Datum, ab dem sie alt ist, selbst mit sich. Ein kleines Skript kann jeden Morgen nachsehen, welche Dateien abgelaufen sind, und jemandem Bescheid sagen.
 
-## 8. Für Entwickler: Wie ein Assistent das benutzt
+## 8. Für Entwickler: Wie OKF einem Graph RAG hilft
 
-Zwei Wege, und in der Praxis beide:
+Kurz, was ein Graph RAG macht: Es zerlegt alle Dokumente in Schnipsel (Chunks), baut aus den Texten einen Graphen aus Dingen und ihren Beziehungen („Sandra schreibt KVA", „Auftrag hat Werkstatt-Termin") und sucht bei einer Frage erst die passenden Schnipsel, dann die Nachbarn im Graphen. Das ist stark für „finde mir alles, was mit X zusammenhängt". Es ist schwach für „was *ist* X", weil es die Definition jedes Mal neu aus Bruchstücken zusammensetzt.
 
-**Direkt lesen.** Vor der eigentlichen Suche prüft der Assistent, ob die Frage einen Begriff aus `okf/begriffe/index.md` trifft. Treffer: Datei lesen, als geprüfte Quelle in den Kontext geben. Das ist deterministisch, gleiche Frage, gleiche Definition.
+OKF hilft an drei Stellen.
 
-**Ingestieren.** Die OKF-Dateien kommen zusätzlich in den normalen Such-Index (RAG, Vektordatenbank, was auch immer). Saubere, kurze Markdown-Dateien ergeben bessere Chunks als Wiki-Exporte, und die Kopf-Felder (`verified`, `stale_after`) landen als Metadaten am Chunk. Damit kann man geprüfte Treffer beim Suchen höher gewichten.
+**1. Vor der Suche: der Router.** Bevor der Assistent ins Graph RAG geht, liest er `okf/begriffe/index.md` (eine Datei, ein paar Zeilen) und prüft, ob die Frage einen Begriff daraus trifft. Treffer: die Konzeptdatei wird gelesen und als `[Quelle: OKF, geprüft am 2026-11-09]` in den Kontext gegeben. Kein Treffer: normaler RAG-Pfad. Bei gemischten Fragen („welche Aufträge hatten im Oktober Verzug?") liefert OKF die Definition von Auftrag und das Graph RAG die Oktober-Daten, und der Assistent nennt beide Quellen getrennt. Das ist deterministisch: gleiche Frage, gleiche Definition, jedes Mal.
 
-Warum beide: Nur direkt lesen verpasst Fragen, in denen der Begriff nicht wörtlich vorkommt. Nur ingestieren lässt die Definition gegen zehntausend andere Chunks antreten, und die alte Wiki-Seite kann gewinnen, weil sie der Frage ähnlicher klingt.
+**2. Im Index: OKF-Dateien ingestieren.** Die OKF-Dateien kommen zusätzlich in den normalen Such-Index. Drei Effekte:
 
-OKF ersetzt die Suche nicht. Es ist die Schicht für die Handvoll Dinge, die der Assistent sicher wissen muss.
+- Saubere, kurze Markdown-Dateien ergeben bessere Chunks als Wiki-Exporte mit Navigation, Kommentaren und Tabellenresten.
+- Die Kopf-Felder landen als Metadaten am Chunk. Beim Suchen kann man Chunks mit `verified` höher gewichten und Chunks mit abgelaufenem `stale_after` runterstufen oder ausblenden.
+- Bei Fragen, in denen der Begriff nicht wörtlich vorkommt (Router springt nicht an), ist die Definition trotzdem als Hintergrund dabei.
+
+**3. Im Graphen: saubere Knoten.** Ein Graph RAG extrahiert Entitäten aus Text. Aus drei Wiki-Seiten extrahiert er drei leicht verschiedene „Auftrag"-Knoten, oder einen Knoten mit widersprüchlichen Eigenschaften. Wenn die OKF-Datei im Index ist, gibt es einen klar definierten Knoten „Auftrag" mit expliziten Kanten zu „Kostenvoranschlag" und „Werkstatt-Termin" (die Markdown-Links). Die aus Dokumenten extrahierten Beziehungen hängen sich daran auf, statt im Leeren zu schweben. Die `sources` im Kopf werden zur Kante „definiert in", die `verified`-Angabe zur Eigenschaft des Knotens.
+
+**Warum beide Wege, direkt lesen und ingestieren:**
+
+| | Nur direkt lesen | Nur ingestieren | Beides |
+| --- | --- | --- | --- |
+| „Was ist ein Auftrag?" | sicher richtig | die alte Wiki-Seite kann höher ranken, weil sie ähnlicher klingt | sicher richtig |
+| „Warum hängt Rad 4711 seit drei Wochen?" | Router springt nicht an, Definition fehlt im Kontext | Definition ist als Hintergrund dabei | Definition ist dabei |
+| Verhalten | deterministisch | probabilistisch | deterministisch wo es geht, probabilistisch als Netz |
+
+Die Kosten sind gering: Ein OKF hat zehn bis fünfzig Dateien. Der Index merkt das kaum, der Router liest eine Indexdatei.
+
+**Was OKF nicht ist:** kein Ersatz für die Suche, keine Wissensdatenbank, kein Ort für alles. Es ist die dünne Schicht für die Handvoll Dinge, die der Assistent sicher wissen muss, bevor er anfängt zu suchen.
+
+Minimaler Router in Pseudocode:
+
+```python
+def antworte(frage):
+    begriffe = lies("okf/begriffe/index.md")          # Begriff -> Datei
+    treffer = [b for b in begriffe if b.lower() in frage.lower()]
+    kontext = []
+    for b in treffer:
+        kontext.append(("OKF, geprüft", lies(begriffe[b])))
+    kontext += graph_rag_suche(frage)                   # wie bisher
+    return llm(frage, kontext)                          # Quellen getrennt nennen
+```
+
+Das ist für den Anfang ausreichend. Wenn der Router zu oft daneben liegt, ersetzt man die Wortsuche durch eine kleine Klassifikation; die Struktur bleibt gleich.
 
 ## 9. Was in diesem Repo liegt
 
